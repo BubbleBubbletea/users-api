@@ -16,10 +16,33 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
+// Base route
 app.get('/', (req, res) => {
   res.send('API is running!');
 });
 
+// Authenticate middleware
+const authenticate = async (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1]; // Extract Bearer token
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: No token provided' });
+  }
+
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data) {
+      console.error('Error verifying token:', error);
+      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    }
+    req.user = data.user; // Attach user to request object
+    next();
+  } catch (err) {
+    console.error('Unexpected error in token verification:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Groups route
 app.get('/groups', async (req, res) => {
   try {
     const { data, error } = await supabase.from('groups').select('*');
@@ -31,6 +54,7 @@ app.get('/groups', async (req, res) => {
   }
 });
 
+// Members routes
 app.get('/members', async (req, res) => {
   const { groupId } = req.query;
   try {
@@ -73,25 +97,7 @@ app.delete('/members/:id', async (req, res) => {
   }
 });
 
-const authenticate = async (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized: No token provided' });
-  }
-
-  try {
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-    }
-    req.user = data.user;
-    next();
-  } catch (err) {
-    console.error('Error verifying token:', err);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-};
-
+// Users and profiles routes
 app.get('/users/profiles', authenticate, async (req, res) => {
   try {
     const { data, error } = await supabase.from('users').select('*, user_profiles(*)');
@@ -103,6 +109,22 @@ app.get('/users/profiles', authenticate, async (req, res) => {
   }
 });
 
+app.post('/user_profiles', async (req, res) => {
+  const { user_id, introduction, courses } = req.body;
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .insert([{ user_id, introduction, courses }])
+      .select();
+    if (error) throw error;
+    res.status(201).json(data[0]);
+  } catch (err) {
+    console.error('Error creating profile:', err);
+    res.status(500).json({ error: 'Error creating profile' });
+  }
+});
+
+// Start the server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
